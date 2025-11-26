@@ -1,0 +1,493 @@
+SAN LUIS PRO – ESPECIFICACIÓN DE APP
+CALCULADORA DE CUADROS + CHAT DE IA (VERSIÓN INTERNA)
+
+---
+
+1. RESUMEN DEL PROYECTO
+
+---
+
+Quiero una aplicación web interna (para uso personal en mi estudio SAN LUIS PRO) que funcione como:
+
+1. Calculadora oficial de precios de cuadros e impresiones (basada en mis propios costos y precios).
+2. Cotizador rápido según presupuesto (“¿qué me alcanza con 2,000 pesos?”).
+3. Ayudante inteligente con chat de IA al lado, que explique las opciones y recomiende combinaciones, pero SIN inventar precios.
+
+No es para clientes finales, es para mi uso profesional como fotógrafo/videógrafo/diseñador.
+
+---
+
+2. OBJETIVOS PRINCIPALES
+
+---
+
+* Tener una “calculadora oficial” para cuadros/impresiones, basada en mi tabla de precios real.
+* Poder meter un presupuesto (ej. 2,000 MXN) y que la app me diga:
+
+  * Qué combinaciones de productos (cuadros, impresiones) caben en ese presupuesto.
+  * Mostrar varias opciones ordenadas por:
+
+    * Más piezas.
+    * Mayor tamaño total (área).
+    * Mejor margen de ganancia (si tengo costo y precio).
+* Integrar un chat de IA que:
+
+  * Reciba la información de las opciones calculadas.
+  * Explique en español claro qué conviene más según el objetivo (llenar pared, cuadro grande “prota”, etc.).
+  * Nunca invente precios, ni combos que el backend no haya calculado.
+* Que sea un sistema fácil de extender después (para paquetes de fotos, etc.).
+
+---
+
+3. ALCANCE Y USUARIOS
+
+---
+
+* Usuario único: yo (el dueño de SAN LUIS PRO).
+* No necesito sistema de usuarios/multicuenta al inicio.
+* No necesito diseño super complejo, pero sí algo legible y práctico.
+
+Casos de uso típicos:
+
+* Caso 1: “Trae 2,000 pesos, quiere 1 o 2 cuadros grandes para sala.”
+* Caso 2: “Trae 1,500 pesos, quiere varias piezas medianas para regalar.”
+* Caso 3: “Quiero saber qué combo me deja mejor margen y entra en X presupuesto.”
+
+---
+
+4. ARQUITECTURA GENERAL
+
+---
+
+Tecnologías sugeridas (pueden implementarse así):
+
+* Backend:
+
+  * Lenguaje: Python.
+  * Framework: FastAPI.
+  * Base de datos: SQLite (archivo local .db).
+* Frontend:
+
+  * HTML + CSS (puede ser TailwindCSS) + JavaScript simple.
+  * Sin frameworks pesados al inicio (no es obligatorio usar React).
+* IA / Chat:
+
+  * API de OpenRouter (modelo tipo Kimi K2 o similar).
+  * Llamadas al endpoint compatible con OpenAI:
+
+    * POST [https://openrouter.ai/api/v1/chat/completions](https://openrouter.ai/api/v1/chat/completions)
+  * Usar variable de entorno para la API key:
+
+    * `OPENROUTER_API_KEY`
+
+---
+
+5. MODELO DE DATOS / BASE DE DATOS
+
+---
+
+Quiero que la app sea totalmente basada en MI base de datos de precios.
+La IA NO debe inventar precios. Todo precio debe salir de la BD.
+
+Usar SQLite con mínimo estas tablas:
+
+---
+
+## 5.1 Tabla `prints` (impresiones)
+
+Representa cada tamaño de impresión que yo manejo.
+
+Campos sugeridos:
+
+* id           INTEGER PRIMARY KEY AUTOINCREMENT
+* size         TEXT    (ej. "16x24", "20x30", "24x36")
+* width_cm     REAL    (opcional, para cálculo de área)
+* height_cm    REAL    (opcional)
+* area_cm2     REAL    (opcional, puede calcularse: width_cm * height_cm)
+* print_price  REAL    (precio de venta al cliente de la impresión sin marco)
+* cost_price   REAL    (costo interno aproximado de producción, si lo tengo)
+* has_frame_A1 INTEGER (0/1, indica si existe marco A1 en este tamaño)
+* has_frame_B2 INTEGER (0/1)
+* has_frame_C1 INTEGER (0/1)
+
+Notas:
+
+* Los tamaños que en mi calculadora no tienen marco disponible deben tener has_frame_* = 0.
+* Los que sí tengan marco en A1, B2 o C1 se marcan con 1 según corresponda.
+
+---
+
+## 5.2 Tabla `frames` (marcos)
+
+Representa marcos A1, B2, C1 para distintos tamaños.
+
+* id          INTEGER PRIMARY KEY AUTOINCREMENT
+* style       TEXT    (ej. "A1", "B2", "C1")
+* size        TEXT    (mismo formato que prints.size, ej. "16x24")
+* frame_price REAL    (precio de venta al cliente del marco para ese tamaño)
+* cost_price  REAL    (costo interno aproximado)
+* color       TEXT    (opcional: "oro", "plata", "nogal", "chocolate", etc.)
+
+Regla general:
+
+* Solo existirán filas para combinaciones tamaño+estilo que yo realmente maneje.
+
+---
+
+## 5.3 Tabla `products` (productos “vendibles”)
+
+Representa exactamente lo que yo vendo:
+
+* Solo impresión.
+* Cuadro (impresión + marco).
+* Otros combos simples si luego quiero.
+
+Campos sugeridos:
+
+* id          INTEGER PRIMARY KEY AUTOINCREMENT
+* code        TEXT UNIQUE   (ej. "PRINT_16x24", "FRAME_16x24_A1", "CUADRO_16x24_C1")
+* type        TEXT          ("print", "frame", "combo")
+* size        TEXT          (ej. "16x24")
+* style       TEXT NULL     (null para solo impresión, "A1"/"B2"/"C1" para cuadros)
+* sale_price  REAL          (precio final al cliente)
+* cost_price  REAL          (opcional, para cálculo de margen)
+* description TEXT          (descripción legible: "Cuadro 16x24 con marco C1 en madera")
+
+Reglas:
+
+* Para un combo tipo cuadro, sale_price = print_price + frame_price + (opcional margen extra).
+* Esta tabla se puede rellenar con scripts que lean `prints` y `frames`, o manualmente al inicio.
+
+---
+
+## 5.4 Tabla opcional `settings`
+
+Para guardar configuraciones globales:
+
+* id         INTEGER PRIMARY KEY
+* key        TEXT UNIQUE   (ej. "max_items_default")
+* value      TEXT          (se puede parsear según el caso)
+
+---
+
+6. LÓGICA PRINCIPAL: CÁLCULO DE COMBINACIONES
+
+---
+
+Función principal del backend: dado un presupuesto y algunas preferencias, generar combinaciones de productos que:
+
+* No excedan el presupuesto.
+* Sean “razonables” (no 20 cuadros mini en la mayoría de los casos).
+* Se puedan ordenar por criterio.
+
+Entradas típicas para el cálculo:
+
+* `budget` (float): presupuesto en MXN (ej. 2000.0).
+* `objective` (string): uno de:
+
+  * "mas_piezas"
+  * "mayor_area"
+  * "mejor_margen"
+* `include_prints` (bool): si se permiten solo impresiones.
+* `include_frames` (bool): si se permiten cuadros con marco.
+* `max_items` (int): límite máximo de piezas por combo (ej. 3 o 4).
+* Opcional: filtro de tamaños mínimos/máximos.
+
+Salida de la función de cálculo:
+
+Lista de combos, cada combo con:
+
+* `id` interno o `combo_code` (opcional).
+* `total_price` (float).
+* `total_cost` (float, si se usa).
+* `margin` (float, opcional).
+* `total_items` (int).
+* `total_area` (float, opcional).
+* `items`: lista de objetos con:
+
+  * `product_code`
+  * `name` (description)
+  * `size`
+  * `style`
+  * `qty`
+  * `unit_price`
+  * `total_price_item`
+
+Algoritmo mínimo sugerido (puede ser simple):
+
+* Cargar productos permitidos (según filters).
+* Ordenarlos por precio.
+* Probar combinaciones de:
+
+  * 1 producto.
+  * 2 productos (doble bucle).
+  * 3 productos (triple bucle, si `max_items` >= 3).
+* Rechazar combos cuyo total supere `budget`.
+* Calcular métricas (total_items, total_area, margin, etc.).
+* Ordenar y devolver TOP N (ej. 10 mejores combos).
+
+---
+
+7. API DEL BACKEND (ENDPOINTS)
+
+---
+
+Framework sugerido: FastAPI.
+
+Endpoints mínimos:
+
+---
+
+## 7.1 `GET /api/products`
+
+* Devuelve la lista de productos disponibles, para que el frontend pueda mostrar catálogos si hace falta.
+* Parámetros opcionales:
+
+  * `type`, `size`, etc.
+
+---
+
+## 7.2 `POST /api/calc-combos`
+
+Entrada (JSON):
+
+```json
+{
+  "budget": 2000.0,
+  "objective": "mas_piezas",
+  "include_prints": true,
+  "include_frames": true,
+  "max_items": 3
+}
+```
+
+Salida (JSON) ejemplo:
+
+```json
+{
+  "budget": 2000.0,
+  "objective": "mas_piezas",
+  "combos": [
+    {
+      "combo_id": "C1",
+      "total_price": 1950.0,
+      "total_cost": 1200.0,
+      "margin": 750.0,
+      "total_items": 3,
+      "total_area": 12345.0,
+      "items": [
+        {
+          "product_code": "CUADRO_11x14_A1",
+          "name": "Cuadro 11x14 con marco A1",
+          "size": "11x14",
+          "style": "A1",
+          "qty": 3,
+          "unit_price": 650.0,
+          "total_price_item": 1950.0
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 7.3 `POST /api/chat-combos`
+
+Este endpoint debe integrar la IA (OpenRouter).
+
+Entrada:
+
+* `user_message`: texto del usuario (yo).
+* `calc_context`: objeto con los combos devueltos por `/api/calc-combos`.
+
+Ejemplo entrada:
+
+```json
+{
+  "user_message": "Tengo 2000 pesos y estos son los combos, ¿qué me recomiendas para llenar una sala?",
+  "calc_context": {
+    "budget": 2000.0,
+    "objective": "mas_piezas",
+    "combos": [ ... ]
+  }
+}
+```
+
+Lógica:
+
+1. El backend construye un prompt para el modelo de IA (Kimi K2 u otro).
+2. En el prompt, se deja claro:
+
+   * Que los precios y combos YA están calculados.
+   * Que NO debe inventar combos ni precios nuevos.
+3. Llama a OpenRouter y devuelve el texto de la respuesta en JSON.
+
+Salida:
+
+```json
+{
+  "reply": "Con 2000 pesos, el combo que más te conviene para llenar una sala es...",
+  "used_combo_ids": ["C1", "C3"]
+}
+```
+
+---
+
+8. INTEGRACIÓN CON OPENROUTER / IA
+
+---
+
+Uso de OpenRouter:
+
+* Endpoint:
+
+  * POST [https://openrouter.ai/api/v1/chat/completions](https://openrouter.ai/api/v1/chat/completions)
+* Encabezados:
+
+  * `Authorization: Bearer OPENROUTER_API_KEY`
+  * `Content-Type: application/json`
+  * Opcionales:
+
+    * `HTTP-Referer`: puede ser algún dominio propio.
+    * `X-Title`: "Calculadora Cuadros San Luis Pro".
+
+Ejemplo de body (a nivel conceptual):
+
+```json
+{
+  "model": "moonshotai/kimi-k2",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Eres un asistente experto en recomendaciones de venta de cuadros y fotografías. No inventas precios ni productos. Solo explicas y recomiendas combinaciones usando los datos que te doy."
+    },
+    {
+      "role": "user",
+      "content": "Aquí están las opciones de combos para un presupuesto de 2000 pesos y lo que quiere el cliente. Explica qué combo conviene más y por qué."
+    },
+    {
+      "role": "user",
+      "content": "DATOS: ... (aquí se inserta un resumen de combos en texto, no raw JSON enorme)"
+    }
+  ]
+}
+```
+
+Reglas IMPORTANTES para el prompt del system:
+
+* Dejar súper claro que:
+
+  * NO debe inventar precios.
+  * NO debe inventar combos nuevos.
+  * Solo debe seleccionar/explicar entre las opciones calculadas por el backend.
+* Estilo:
+
+  * Español.
+  * Claro, directo, buena redacción.
+  * Texto listo para que yo lo lea y decida.
+
+---
+
+9. FRONTEND / INTERFAZ
+
+---
+
+Quiero una sola página web (puede ser `index.html`) con layout tipo “dos columnas”:
+
+Columna izquierda: CALCULADORA
+
+* Inputs:
+
+  * Presupuesto (campo numérico).
+  * Objetivo (select: más piezas / mayor área / mejor margen).
+  * Checkbox: incluir impresiones.
+  * Checkbox: incluir cuadros con marco.
+  * Campo max_items.
+* Botón: “Calcular opciones”.
+* Sección de resultados:
+
+  * Lista de combos en tabla (combo_id, total, piezas, área, margen).
+  * Cada combo con un botón “Usar en el chat” que pasa ese combo al chat (opcional).
+
+Columna derecha: CHAT
+
+* Área de mensajes:
+
+  * “Usuario” (yo).
+  * “IA”.
+* Input de texto + botón “Enviar”.
+* El frontend:
+
+  * Llama a `/api/chat-combos` enviando el mensaje y el contexto de combos.
+  * Muestra la respuesta en estilo burbuja.
+
+Estilo visual:
+
+* No ultra complejo.
+* Simple, legible.
+* Responsivo básico si se puede (pero no prioridad).
+
+---
+
+10. REGLAS CRÍTICAS DE DISEÑO
+
+---
+
+* La fuente de verdad de precios es la base de datos (SQLite).
+* La IA NUNCA calcula precios ni combos por sí sola.
+* Toda la lógica económica (qué cabe en el presupuesto, margenes, etc.) la hace el backend.
+* La IA solo:
+
+  * Toma el listado de opciones.
+  * Ayuda a comparar y recomendar.
+* El sistema estará pensado primero para correr en local (en mi PC), no es necesario desplegarlo en internet al inicio.
+
+---
+
+11. TAREAS PARA LA IA QUE ESCRIBA EL CÓDIGO
+
+---
+
+Cuando otro modelo (Codex, Kimi, etc.) use este archivo .txt, quiero que haga esto en orden:
+
+1. Crear el esquema de la base de datos SQLite con las tablas:
+
+   * prints
+   * frames
+   * products
+   * (opcional) settings
+
+2. Generar un script de inicialización que:
+
+   * Cree las tablas.
+   * Permita insertar datos de ejemplo (para pruebas).
+
+3. Implementar un backend en Python + FastAPI con endpoints:
+
+   * `GET /api/products`
+   * `POST /api/calc-combos`
+   * `POST /api/chat-combos`
+
+4. Implementar la lógica de cálculo de combos dentro del backend:
+
+   * Respetando `budget`, `objective`, `include_prints`, `include_frames`, `max_items`.
+
+5. Implementar la función que llama a OpenRouter (`/api/chat-completions`) usando:
+
+   * `OPENROUTER_API_KEY` desde variable de entorno.
+   * Modelo tipo `"moonshotai/kimi-k2"` (o el que se configure).
+
+6. Crear un `index.html` con:
+
+   * Formulario de la calculadora (lado izquierdo).
+   * Chat (lado derecho).
+   * JavaScript para llamar a los endpoints del backend con `fetch`.
+
+7. Entregar código limpio, comentado, y listo para ejecutar con:
+
+   * `uvicorn main:app --reload` (o similar) en desarrollo.
+
+Este archivo .txt es la especificación de mi idea.
+La IA que lo lea debe usarlo como guía para generar TODO el código necesario.

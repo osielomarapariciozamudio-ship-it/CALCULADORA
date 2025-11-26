@@ -1,0 +1,375 @@
+Te dejo puro **texto extra** para que lo pegues **DESPUÉS** del .txt que ya tienes. Está escrito como especificación seria para la IA (sin chistes), pero pensando en todo lo que tú necesitas.
+
+---
+
+12. DETALLE DE LA INTERFAZ (BOTONES, CAMPOS Y COMPORTAMIENTO)
+
+---
+
+La aplicación debe ser muy clara y lógica. La interfaz principal se compone de dos zonas:
+
+* Zona izquierda: **Calculadora / Motor de combinaciones**.
+* Zona derecha: **Chat de IA contextual**.
+
+A continuación se detalla el comportamiento esperado de cada elemento.
+
+---
+
+## 12.1. Zona Izquierda – Calculadora
+
+Elementos principales:
+
+1. Campo numérico: `Presupuesto (MXN)`
+
+   * Tipo: numérico (float).
+   * Validaciones:
+
+     * No aceptar valores negativos.
+     * En caso de valor vacío o 0, mostrar mensaje de error claro:
+       "Debes ingresar un presupuesto mayor a 0."
+   * Comportamiento:
+
+     * El valor se usará como tope máximo para el cálculo de combos.
+
+2. Select / dropdown: `Objetivo`
+
+   * Opciones sugeridas:
+
+     * `"mas_piezas"` → Maximizar número de piezas.
+     * `"mayor_area"` → Maximizar área total (tamaño visual).
+     * `"mejor_margen"` → Maximizar margen (sale_price - cost_price).
+   * Este campo se envía al backend como `objective`.
+   * El backend no debe depender exclusivamente de esta opción para filtrar, sino para ordenar las opciones finales.
+
+3. Checkbox: `Incluir solo impresiones`
+
+   * Nombre lógico: `include_prints`.
+   * Si está marcado:
+
+     * La calculadora puede considerar productos de tipo `"print"` en la tabla `products`.
+   * Si está desmarcado:
+
+     * Deben excluirse productos de tipo `"print"`.
+   * Combinable con el siguiente checkbox.
+
+4. Checkbox: `Incluir cuadros con marco`
+
+   * Nombre lógico: `include_frames`.
+   * Si está marcado:
+
+     * La calculadora puede considerar productos de tipo `"combo"` (impresión + marco) y, si aplica, tipo `"frame"` si se diseñan así.
+   * Si ambos checkboxes (`include_prints` e `include_frames`) están desmarcados:
+
+     * Mostrar error al usuario: "Debes seleccionar al menos un tipo de producto (impresiones o cuadros con marco)."
+
+5. Campo numérico: `Máximo de piezas por combo`
+
+   * Nombre lógico: `max_items`.
+   * Tipo: entero.
+   * Rango recomendado: mínimo 1, máximo 10 (configurable).
+   * Uso:
+
+     * El backend solo debe generar combinaciones de hasta `max_items` productos (sumando cantidades).
+   * Si se ingresa un valor mayor al máximo permitido:
+
+     * Ajustar automáticamente al máximo y mostrar advertencia no intrusiva.
+
+6. Botón principal: `Calcular opciones`
+
+   * Acción:
+
+     * Enviar al endpoint `/api/calc-combos` un JSON con:
+
+       * `budget`
+       * `objective`
+       * `include_prints`
+       * `include_frames`
+       * `max_items`
+     * Deshabilitar el botón mientras se espera respuesta.
+     * En caso de error de red o validación, mostrar un mensaje claro en la zona de resultados.
+   * Resultado esperado:
+
+     * Recibir una lista de `combos` calculados por el backend.
+     * Mostrar los combos en una tabla o lista.
+
+7. Botón secundario: `Limpiar`
+
+   * Acción:
+
+     * Limpiar:
+
+       * Campo presupuesto.
+       * Tabla de resultados.
+       * Cualquier mensaje de error.
+     * NO debe afectar las opciones de configuración persistente (si las hubiera).
+   * Útil para reiniciar el flujo rápido.
+
+8. Zona de resultados: `Lista de combinaciones`
+
+   * Mostrar cada combo en una tarjeta o fila con al menos:
+
+     * ID del combo (o índice).
+     * Total de precio (`total_price`).
+     * Número de piezas (`total_items`).
+     * Área total si está disponible (`total_area`).
+     * Margen si está disponible (`margin`).
+   * Dentro de cada combo:
+
+     * Listar los productos incluidos:
+
+       * Nombre descriptivo (`name`).
+       * Tamaño (`size`).
+       * Estilo (`style`) si existe.
+       * Cantidad (`qty`).
+       * Precio unitario y total por ítem.
+   * Para cada combo, incluir:
+
+     * Botón: `Elegir este combo para el chat`
+
+       * Al hacer clic:
+
+         * Guardar internamente cuál combo fue seleccionado.
+         * Enviar esa información como parte del contexto en el próximo mensaje al chat de IA.
+
+---
+
+## 12.2. Zona Derecha – Chat de IA
+
+Elementos principales:
+
+1. Área de conversación
+
+   * Debe mostrar la secuencia de mensajes:
+
+     * De usuario (yo).
+     * De la IA.
+   * Los mensajes deben distinguirse visualmente (ajuste de color/fondo).
+
+2. Campo de texto: `Mensaje`
+
+   * Aquí escribo preguntas o instrucciones, por ejemplo:
+
+     * "Con este presupuesto quiero algo que se vea grande en la sala, ¿cuál combo recomiendas?"
+   * Permitir varias líneas (textarea) o al menos texto largo.
+
+3. Botón: `Enviar`
+
+   * Acción:
+
+     * Construir una llamada a `/api/chat-combos` con:
+
+       * `user_message`: contenido del campo de texto.
+       * `calc_context`: última respuesta válida de `/api/calc-combos`, incluyendo la lista de combos.
+       * Idealmente, también un identificador del combo seleccionado (si ya elegí uno con el botón “Elegir este combo para el chat”).
+   * Mientras se espera la respuesta de la IA:
+
+     * Deshabilitar el botón o mostrar un indicador de “pensando”.
+
+4. Botón opcional: `Reutilizar último cálculo`
+
+   * Si no se han ejecutado nuevos cálculos, usar el último `calc_context` disponible.
+   * Permite enviar nuevas preguntas a la IA sobre el mismo conjunto de combos.
+
+5. Botón opcional: `Copiar respuesta`
+
+   * Tras cada respuesta de la IA, ofrecer un botón para copiar el texto al portapapeles.
+   * Esto sirve para pegar en notas internas, WhatsApp, etc., aunque este sistema es interno.
+
+---
+
+13. FLUJOS DE USO PRINCIPALES
+
+---
+
+## 13.1. Flujo: “Consulta rápida con presupuesto fijo”
+
+1. Ingreso un presupuesto (ej. 2000).
+2. Selecciono objetivo (ej. "mayor_area").
+3. Dejo activado:
+
+   * `include_prints = false`
+   * `include_frames = true` (porque quiero cuadros).
+4. Defino `max_items = 3`.
+5. Presiono `Calcular opciones`.
+6. Veo una lista de combos:
+
+   * Ejemplo: 1 cuadro grande, 2 medianos, etc.
+7. Hago clic en `Elegir este combo para el chat` en la opción que más me llame la atención.
+8. En el chat escribo:
+
+   * "Con este combo y este presupuesto, ¿crees que es buena combinación para una sala principal o propondrías otro de los combos?"
+9. El sistema llama a la IA, pasándole:
+
+   * El mensaje.
+   * El contexto de combos.
+   * El combo seleccionado.
+10. La IA responde, comparando opciones y justificando.
+
+## 13.2. Flujo: “Comparar opciones para optimizar margen”
+
+1. Ingreso presupuesto (ej. 3500).
+2. Objetivo: `"mejor_margen"`.
+3. Incluyo tanto impresiones como cuadros.
+4. `max_items = 4`.
+5. `Calcular opciones`.
+6. Se listan combos con margen calculado.
+7. En el chat, pregunto:
+
+   * "Indícame cuál combo tiene mejor margen de ganancia sin que se vea pobre en tamaño."
+8. La IA debe:
+
+   * Revisar los datos del combo con mejor margen.
+   * Comentarlo y justificar por qué es buena opción (más allá de solo números, en términos visuales o prácticos).
+
+## 13.3. Flujo: “Iterar sin recalcular”
+
+1. Hago un cálculo con cierto presupuesto.
+2. Uso el chat varias veces con diferentes preguntas:
+
+   * "¿Cuál combo recomiendas si el cliente prefiere muchas piezas pequeñas?"
+   * "¿Y si la prioridad es tener una sola pieza muy grande?"
+3. El backend NO necesita recalcular combos mientras no cambie el contexto.
+4. Solo reenvía el mismo conjunto de combos al modelo de IA con distintas instrucciones.
+
+---
+
+14. REGLAS LÓGICAS ADICIONALES
+
+---
+
+* Si no se ha hecho ningún cálculo y el usuario intenta usar el chat:
+
+  * El endpoint `/api/chat-combos` debe devolver un error controlado.
+  * El frontend debe mostrar un mensaje:
+    "Primero debes calcular opciones con un presupuesto antes de usar el chat."
+
+* Si el presupuesto es tan bajo que no cabe ni un solo producto:
+
+  * El backend debe:
+
+    * Devolver `combos = []`.
+    * Incluir un mensaje interno tipo `reason`: "Presupuesto insuficiente".
+  * El frontend:
+
+    * Mostrar mensaje: "Con este presupuesto no hay productos disponibles. Intenta con un monto mayor."
+
+* El cálculo de margen:
+
+  * Si `cost_price` es 0 o NULL en algún producto, el sistema puede:
+
+    * Ignorar ese producto en el cálculo de margen.
+    * O marcar un margen parcial.
+  * Se recomienda:
+
+    * Siempre rellenar `cost_price` en la base de datos para que la lógica “mejor_margen” sea confiable.
+
+* El cálculo de área:
+
+  * Si `area_cm2` no está definido para todos los productos:
+
+    * El criterio `"mayor_area"` debe usar solo los productos con área bien definida.
+    * O bien descontar área nula como 0 y priorizar combos con datos completos.
+
+* Redondeo:
+
+  * Todos los totales (`total_price`, `total_cost`, `margin`) deben redondearse a 2 decimales al mostrarlos.
+  * La lógica interna puede trabajar con más precisión, pero la UI debe ser consistente.
+
+* Manejo de impuestos (opcional para futuro):
+
+  * Puede agregarse en la configuración global un campo:
+
+    * `iva_porcentaje` (ej. 16).
+  * La calculadora podría:
+
+    * Mostrar precio antes de impuestos y precio con IVA.
+  * Este comportamiento puede activarse/manejarse más adelante.
+
+---
+
+15. MEJORAS FUTURAS (EXTENSIBILIDAD)
+
+---
+
+Aunque la primera versión se centra en cuadros e impresiones, la app debe mantenerse abierta a:
+
+1. Integrar otros catálogos:
+
+   * Paquetes de bodas, XV, bautizos.
+   * Servicios de video, horas de cobertura, staff, transporte, etc.
+   * Usando la misma idea de `products` y `combos`.
+
+2. Múltiples “perfiles de cálculo”:
+
+   * Perfil “Cuadros”.
+   * Perfil “Bodas”.
+   * Perfil “XV”.
+   * Cada perfil podría usar sus propias tablas o subconjuntos de `products`.
+
+3. Guardar presets:
+
+   * Botón `Guardar configuración`:
+
+     * Guardar combinaciones de parámetros (budget, objective, max_items, filtros) para reutilizar.
+
+4. Historial:
+
+   * Opcionalmente, mantener un historial de consultas:
+
+     * Fecha.
+     * Presupuesto.
+     * Combos recomendados.
+     * Nota breve (si se quiere).
+
+Estas mejoras no son obligatorias en la primera versión, pero la arquitectura debe permitir agregarlas sin reescribir todo.
+
+---
+
+16. REGLAS PARA EL PROMPT DEL CHAT (PARTE LÓGICA)
+
+---
+
+El backend, al llamar a la IA mediante OpenRouter, debe construir siempre un prompt muy claro con estas reglas:
+
+* Indicarle al modelo que:
+
+  * Los precios y productos ya están calculados.
+  * Bajo ninguna circunstancia debe inventar productos nuevos.
+  * No debe modificar los montos económicos.
+* Incluir siempre:
+
+  * Resumen del presupuesto.
+  * Objetivo del cálculo (mas_piezas, mayor_area, mejor_margen).
+  * Lista breve pero clara de los combos (sin saturar).
+* Pedir explícitamente:
+
+  * Que señale 1–3 opciones recomendadas con justificación.
+  * Que use un lenguaje claro, en español, con enfoque práctico.
+
+Ejemplo conceptual de instrucciones dentro del prompt (no código, solo lógica):
+
+* "No cambies los precios ni el número de piezas."
+* "No inventes paquetes que no estén listados."
+* "Usa únicamente la información de combos que te proporciono."
+* "Explica la lógica de recomendación de forma breve: por qué este combo es mejor para llenar pared, o para impactar visualmente, o para tener mejor relación costo/beneficio."
+
+---
+
+17. CRITERIOS DE CALIDAD
+
+---
+
+La app se considerará bien implementada si:
+
+* Siempre respeta la base de datos como fuente de verdad.
+* Los botones y campos se comportan de forma predecible.
+* No se puede usar el chat sin contexto de cálculo.
+* Ante valores extremos o errores (presupuesto demasiado bajo, filtros imposibles):
+
+  * La app informa al usuario sin romperse.
+* El chat de IA:
+
+  * Nunca altera los números.
+  * Se limita a comparar y explicar.
+
+Este texto extra complementa la especificación general y aclara el comportamiento de la interfaz, los botones y la lógica para que cualquier modelo de IA pueda implementar el sistema de forma coherente, robusta y extensible.
