@@ -1,5 +1,11 @@
 # Calculadora Cuadros - San Luis Pro (dev)
 
+## Opinión rápida del estado actual
+- El backend usa FastAPI con endpoints claros para productos, cálculo de combos y chat, lo que facilita extender lógica de precios o métricas.
+- La base de datos SQLite se inicializa con `init_db.py`, así que levantar un entorno nuevo es sencillo siempre que se ejecute antes de probar.
+- El frontend vive en `frontend/index.html` sin dependencias pesadas, ideal para iterar rápido en estilos o copiar la app a otro host.
+- Sugerencia: agregar pruebas automatizadas o scripts de validación de datos ayudaría a detectar cambios en precios antes de subirlos.
+
 ## Requisitos rapidos
 - Python 3.10+
 - Dependencias: `pip install -r requirements.txt`
